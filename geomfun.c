@@ -96,6 +96,7 @@ typedef struct {
     double vx, vy;
     double dx, dy;
     double vdx, vdy;
+    double scale;
     Color color;
 } Shape;
 
@@ -146,6 +147,7 @@ void add_shape() {
     s->oy = ((double)rand()/RAND_MAX - 0.5) * 200;
     s->vx = 0; s->vy = 0;
     s->dx = s->dy = s->vdx = s->vdy = 0;
+    s->scale = 0.5 + (double)rand()/RAND_MAX * 60;
     s->color = rand_color();
     cur = nshapes - 1;
 }
@@ -158,7 +160,7 @@ int main() {
     add_shape();
 
     while (!WindowShouldClose()) {
-        // rotation
+        // rot
         if (IsKeyPressed(KEY_LEFT))  shapes[cur].sy -= 0.002;
         if (IsKeyPressed(KEY_RIGHT)) shapes[cur].sy += 0.002;
         if (IsKeyPressed(KEY_UP))    shapes[cur].sx += 0.002;
@@ -171,7 +173,7 @@ int main() {
         if (IsKeyPressed(KEY_RIGHT_BRACKET)) cur = (cur + 1) % nshapes;
         if (IsKeyPressed(KEY_ESCAPE)) break;
 
-        // physics
+        // phys
         for (int i = 0; i < nshapes; i++) {
             Shape *s = &shapes[i];
             s->rx += s->sx;
@@ -231,8 +233,8 @@ int main() {
                 p[i] = def->verts[i];
                 rot(&p[i], s->rx, s->ry);
                 double f = 4.0 / (4.0 + p[i].z);
-                p[i].x = W/2 + s->ox + p[i].x * 60 * f;
-                p[i].y = H/2 + s->oy - p[i].y * 60 * f;
+                p[i].x = W/2 + s->ox + p[i].x * s->scale * f;
+                p[i].y = H/2 + s->oy - p[i].y * s->scale * f;
             }
 
             double cx = W/2 + s->ox;
