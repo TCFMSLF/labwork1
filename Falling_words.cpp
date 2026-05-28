@@ -10,20 +10,29 @@
 
 using namespace std;
 
+struct Fragment {
+    float x, y;
+    float vx, vy;
+    char symbol;
+    int lifetime;
+    int maxLifetime;
+    bool active;
+};
+
 struct Particle {
     char symbol;
     float x, y;
     float vx, vy;
     int startDelay;
     bool active;
-    bool stopped;  // флаг, что частица полностью остановилась
+    bool exploding;
+    int explodeFrame;
 };
 
 int main() {
     srand(time(0));
     setlocale(LC_ALL, "");
     
-    // Чтение файла
     ifstream file("input.txt");
     if (!file.is_open()) {
         cerr << "Не удалось открыть файл input.txt" << endl;
@@ -39,7 +48,6 @@ int main() {
         return 1;
     }
     
-    // Инициализация ncurses
     initscr();
     cbreak();
     noecho();
@@ -51,12 +59,10 @@ int main() {
     getmaxyx(stdscr, screenHeight, screenWidth);
     screenHeight -= 1;
     
-    // Параметры
     float baseSpeedY = 2.5f;
     float speedVariation = 2.0f;
     int startDelayMax = 50;
     
-    // Создание частиц
     vector<Particle> particles;
     for (char ch : content) {
         if (ch == '\n' || ch == '\r' || ch == '\t' || ch == ' ') continue;
@@ -69,60 +75,98 @@ int main() {
         p.vy = baseSpeedY + (rand() % (int)(speedVariation * 10)) / 10.0f;
         p.startDelay = rand() % startDelayMax;
         p.active = false;
-        p.stopped = false;
+        p.exploding = false;
+        p.explodeFrame = 0;
         particles.push_back(p);
     }
     
-    if (particles.empty()) {
-        endwin();
-        cerr << "Нет символов для отображения" << endl;
-        return 1;
-    }
+    vector<Fragment> fragments;
     
-    // Основной цикл анимации
+    auto createExplosion = [&](float x, float y, char symbol) {
+        int numFragments = 12 + rand() % 8;
+        
+        for (int i = 0; i < numFragments; i++) {
+            Fragment f;
+            f.x = x;
+            f.y = y;
+            
+            float angle = (rand() % 360) * M_PI / 180.0f;
+            float speed = 1.5f + (rand() % 100) / 50.0f;
+            f.vx = cos(angle) * speed;
+            f.vy = sin(angle) * speed;
+            
+
+            char fragSymbols[] = {'.', '*', '+', '#', '~', '`', '\'', '^'};
+            f.symbol = fragSymbols[rand() % 8];
+            
+            // Время жизни осколка (кадров)
+            f.maxLifetime = 30 + rand() % 40;
+            f.lifetime = 0;
+            f.active = true;
+            
+            fragments.push_back(f);
+        }
+        
+        // Дополнительный эффект: несколько "искр" большего размера
+        for (int i = 0; i < 5; i++) {
+            Fragment f;
+            f.x = x;
+            f.y = y;
+            float angle = (rand() % 360) * M_PI / 180.0f;
+            float speed = 2.0f + (rand() % 100) / 30.0f;
+            f.vx = cos(angle) * speed;
+            f.vy = sin(angle) * speed;
+            f.symbol = (rand() % 2) ? '*' : '#';
+            f.maxLifetime = 20 + rand() % 30;
+            f.lifetime = 0;
+            f.active = true;
+            fragments.push_back(f);
+        }
+    };
+    
     int frame = 0;
     bool running = true;
+    int activeParticlesCount = 0;
     
     while (running) {
         int ch = getch();
         if (ch == 27 || ch == 'q' || ch == 'Q') break;
         
         erase();
+        activeParticlesCount = 0;
         
-        // Обновляем частицы
         for (auto& p : particles) {
-            // Активация после задержки
-            if (!p.active && !p.stopped && frame >= p.startDelay) {
+            if (!p.active && !p.exploding && frame >= p.startDelay) {
                 p.active = true;
             }
             
-            if (p.active && !p.stopped) {
-                // Обновление координат
+            if (p.active && !p.exploding) {
+                activeParticlesCount++;
+                
                 p.x += p.vx;
                 p.y += p.vy;
                 
-                // Неупругое соударение с нижним краем
+                bool hitGround = false;
                 if (p.y >= screenHeight - 1) {
                     p.y = screenHeight - 1;
                     p.vy = -p.vy * 0.55f;
                     p.vx *= 0.95f;
                     
-                    // Если скорость стала очень маленькой - частица остановилась
-                    if (fabs(p.vy) < 0.2f) {
-                        p.vy = 0;
-                        p.stopped = true;  // Помечаем как остановленную
+                    if (fabs(p.vy) < 0.3f) {
+                        p.exploding = true;
+                        p.explodeFrame = frame;
+                        createExplosion(p.x, p.y, p.symbol);
                         p.active = false;
-                        continue;  // Пропускаем отрисовку остановленной частицы
+                        continue;
                     }
+                    hitGround = true;
                 }
                 
-                // Отскок от верхнего края
                 if (p.y <= 0 && p.vy < 0) {
                     p.y = 0;
                     p.vy = -p.vy * 0.5f;
                 }
                 
-                // Горизонтальные отскоки
                 if (p.x <= 0) {
                     p.x = 0;
                     p.vx = -p.vx * 0.7f;
@@ -132,32 +176,78 @@ int main() {
                     p.vx = -p.vx * 0.7f;
                 }
                 
-                // Ограничение координат
                 if (p.x < 0) p.x = 0;
                 if (p.x >= screenWidth) p.x = screenWidth - 1;
                 if (p.y < 0) p.y = 0;
                 if (p.y >= screenHeight) p.y = screenHeight - 1;
                 
-                // Отрисовка активной частицы
+                attron(COLOR_PAIR(1) | A_BOLD);
                 mvaddch((int)p.y, (int)p.x, p.symbol);
+                attroff(COLOR_PAIR(1) | A_BOLD);
             }
         }
         
-        // Проверяем, все ли частицы остановились
-        bool allStopped = true;
+        for (int i = 0; i < fragments.size(); ) {
+            Fragment& f = fragments[i];
+            
+            if (!f.active) {
+                fragments.erase(fragments.begin() + i);
+                continue;
+            }
+            
+            f.x += f.vx;
+            f.y += f.vy;
+            
+            f.vx *= 0.98f;
+            f.vy *= 0.98f;
+            f.vy += 0.1f;
+            
+            f.lifetime++;
+            
+            int brightness = 255 * (1.0f - (float)f.lifetime / f.maxLifetime);
+            
+            if (f.lifetime >= f.maxLifetime || 
+                f.x < 0 || f.x >= screenWidth || 
+                f.y < 0 || f.y >= screenHeight) {
+                fragments.erase(fragments.begin() + i);
+                continue;
+            }
+            
+            if (f.x >= 0 && f.x < screenWidth && f.y >= 0 && f.y < screenHeight) {
+                mvaddch((int)f.y, (int)f.x, f.symbol);
+            }
+            
+            i++;
+        }
+        
+        for (auto& f : fragments) {
+            if (f.lifetime < 5) {
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dy = -1; dy <= 1; dy++) {
+                        int nx = (int)f.x + dx;
+                        int ny = (int)f.y + dy;
+                        if (nx >= 0 && nx < screenWidth && ny >= 0 && ny < screenHeight) {
+                            if (rand() % 3 == 0) {
+                                mvaddch(ny, nx, '~');
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        bool allExploded = true;
         for (auto& p : particles) {
-            if (!p.stopped) {
-                allStopped = false;
+            if (!p.exploding && frame >= p.startDelay) {
+                allExploded = false;
                 break;
             }
         }
         
-        // Если все остановились - перезапускаем анимацию
-        if (allStopped) {
+        if (allExploded && fragments.size() < 3) {
             refresh();
-            usleep(500000);  // Пауза 0.5 секунды
+            usleep(800000);
             
-            // Сбрасываем все частицы
             for (auto& p : particles) {
                 p.x = screenWidth - 1;
                 p.y = 0;
@@ -165,13 +255,32 @@ int main() {
                 p.vy = baseSpeedY + (rand() % (int)(speedVariation * 10)) / 10.0f;
                 p.startDelay = rand() % startDelayMax;
                 p.active = false;
-                p.stopped = false;
+                p.exploding = false;
             }
+            fragments.clear();
             frame = 0;
         }
         
+        if (rand() % 100 < 2) {
+            for (auto& p : particles) {
+                if (p.active && !p.exploding) {
+                    Fragment spark;
+                    spark.x = p.x + (rand() % 3 - 1);
+                    spark.y = p.y + (rand() % 3 - 1);
+                    spark.vx = (rand() % 100 - 50) / 20.0f;
+                    spark.vy = (rand() % 100) / 30.0f;
+                    spark.symbol = '.';
+                    spark.maxLifetime = 5 + rand() % 10;
+                    spark.lifetime = 0;
+                    spark.active = true;
+                    fragments.push_back(spark);
+                    break;
+                }
+            }
+        }
+        
         refresh();
-        usleep(50000);
+        usleep(40000);
         frame++;
     }
     
