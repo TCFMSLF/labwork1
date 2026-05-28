@@ -27,6 +27,7 @@ struct Particle {
     bool active;
     bool exploding;
     int explodeFrame;
+    int color;
 };
 
 int main() {
@@ -55,6 +56,17 @@ int main() {
     curs_set(0);
     keypad(stdscr, TRUE);
     
+    
+    start_color();
+    
+    init_pair(1, COLOR_RED, COLOR_BLACK);
+    init_pair(2, COLOR_GREEN, COLOR_BLACK);
+    init_pair(3, COLOR_YELLOW, COLOR_BLACK);
+    init_pair(4, COLOR_BLUE, COLOR_BLACK);
+    init_pair(5, COLOR_MAGENTA, COLOR_BLACK);
+    init_pair(6, COLOR_CYAN, COLOR_BLACK);
+    init_pair(7, COLOR_WHITE, COLOR_BLACK);
+    
     int screenHeight, screenWidth;
     getmaxyx(stdscr, screenHeight, screenWidth);
     screenHeight -= 1;
@@ -77,6 +89,7 @@ int main() {
         p.active = false;
         p.exploding = false;
         p.explodeFrame = 0;
+        p.color = 1 + rand() % 7;
         particles.push_back(p);
     }
     
@@ -95,11 +108,9 @@ int main() {
             f.vx = cos(angle) * speed;
             f.vy = sin(angle) * speed;
             
-
             char fragSymbols[] = {'.', '*', '+', '#', '~', '`', '\'', '^'};
             f.symbol = fragSymbols[rand() % 8];
             
-            // Время жизни осколка (кадров)
             f.maxLifetime = 30 + rand() % 40;
             f.lifetime = 0;
             f.active = true;
@@ -107,7 +118,6 @@ int main() {
             fragments.push_back(f);
         }
         
-        // Дополнительный эффект: несколько "искр" большего размера
         for (int i = 0; i < 5; i++) {
             Fragment f;
             f.x = x;
@@ -126,14 +136,12 @@ int main() {
     
     int frame = 0;
     bool running = true;
-    int activeParticlesCount = 0;
     
     while (running) {
         int ch = getch();
         if (ch == 27 || ch == 'q' || ch == 'Q') break;
         
         erase();
-        activeParticlesCount = 0;
         
         for (auto& p : particles) {
             if (!p.active && !p.exploding && frame >= p.startDelay) {
@@ -141,12 +149,9 @@ int main() {
             }
             
             if (p.active && !p.exploding) {
-                activeParticlesCount++;
-                
                 p.x += p.vx;
                 p.y += p.vy;
                 
-                bool hitGround = false;
                 if (p.y >= screenHeight - 1) {
                     p.y = screenHeight - 1;
                     p.vy = -p.vy * 0.55f;
@@ -159,7 +164,6 @@ int main() {
                         p.active = false;
                         continue;
                     }
-                    hitGround = true;
                 }
                 
                 if (p.y <= 0 && p.vy < 0) {
@@ -181,9 +185,9 @@ int main() {
                 if (p.y < 0) p.y = 0;
                 if (p.y >= screenHeight) p.y = screenHeight - 1;
                 
-                attron(COLOR_PAIR(1) | A_BOLD);
+                attron(COLOR_PAIR(p.color) | A_BOLD);
                 mvaddch((int)p.y, (int)p.x, p.symbol);
-                attroff(COLOR_PAIR(1) | A_BOLD);
+                attroff(COLOR_PAIR(p.color) | A_BOLD);
             }
         }
         
@@ -197,14 +201,10 @@ int main() {
             
             f.x += f.vx;
             f.y += f.vy;
-            
             f.vx *= 0.98f;
             f.vy *= 0.98f;
             f.vy += 0.1f;
-            
             f.lifetime++;
-            
-            int brightness = 255 * (1.0f - (float)f.lifetime / f.maxLifetime);
             
             if (f.lifetime >= f.maxLifetime || 
                 f.x < 0 || f.x >= screenWidth || 
@@ -213,9 +213,7 @@ int main() {
                 continue;
             }
             
-            if (f.x >= 0 && f.x < screenWidth && f.y >= 0 && f.y < screenHeight) {
-                mvaddch((int)f.y, (int)f.x, f.symbol);
-            }
+            mvaddch((int)f.y, (int)f.x, f.symbol);
             
             i++;
         }
@@ -256,6 +254,7 @@ int main() {
                 p.startDelay = rand() % startDelayMax;
                 p.active = false;
                 p.exploding = false;
+                p.color = 1 + rand() % 7;
             }
             fragments.clear();
             frame = 0;
